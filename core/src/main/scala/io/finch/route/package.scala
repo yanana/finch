@@ -26,6 +26,10 @@ import com.twitter.finagle.Service
 import com.twitter.finagle.httpx.Method
 import com.twitter.util.Future
 
+import shapeless._
+import shapeless.ops.function.FnToProduct
+import shapeless.ops.hlist.Tupler
+
 /**
  * This package contains various of functions and types that enable _router combinators_ in Finch. A Finch
  * [[io.finch.route.Router Router]] is an abstraction that is responsible for routing the HTTP requests using their
@@ -224,4 +228,68 @@ package object route extends LowPriorityRouterImplicits {
    * A [[io.finch.route.RouterN RouterN]] that extract a boolean value from the route.
    */
   object boolean extends Extractor("boolean", stringToSomeValue(_.toBoolean))
+
+  /**
+   * Implicit class that provides `::` and other operations on any [[RouterN]] that returns a [[HList]].
+   */
+  implicit class HListRouterNOps[L <: HList](val self: RouterN[L]) {
+
+    /**
+     * Composes this [[RouterN]] with the given `that` [[RouterN]].
+     */
+    def ::[A](that: RouterN[A]): RouterN[A :: L] =
+      for { a <- that; b <- self } yield a :: b
+
+    /**
+     * Composes this [[RouterN]] with the given `that` [[Router0]].
+     */
+    def ::(that: Router0): RouterN[L] =
+      that.andThen(self)
+
+    /**
+     * Applies a `FunctionN` with the appropriate arity and types to the elements of this
+     * [[shapeless.HList]].
+     */
+    def />[F, I](fn: F)(implicit ftp: FnToProduct.Aux[F, L => I]): RouterN[I] =
+      self.map(ftp(fn))
+  }
+
+  /**
+   * Implicit class that provides `::` on any [[RouterN]] to support building [[shapeless.HList]]
+   * [[Router]]s.
+   */
+  implicit class ValueRouterNOps[B](val self: RouterN[B]) extends AnyVal {
+
+    /**
+     * Composes this [[RouterN]] with the given `that` [[RouterN]].
+     */
+    def ::[A](that: RouterN[A]): RouterN[A :: B :: HNil] =
+      that :: self.map(_ :: HNil)
+
+    /**
+     * Composes this [[RouterN]] with the given `that` [[Router0]].
+     */
+    def ::(that: Router0): RouterN[B] =
+      that.andThen(self)
+  }
+
+
+  /**
+   * Implicit class that provides `::` on any [[Router0]] to support building [[shapeless.HList]]
+   * [[Router]]s.
+   */
+  implicit class ValueRouter0Ops[B](val self: B)(implicit ev: B => Router0) {
+
+    /**
+     * Composes this [[Router0]] with the given `that` [[RouterN]].
+     */
+    def ::[A](that: RouterN[A]): RouterN[A] =
+      that.andThen(self)
+
+    /**
+     * Composes this [[Router0]] with the given `that` [[Router0]].
+     */
+    def ::(that: Router0): Router0 =
+      that.andThen(self)
+  }
 }
