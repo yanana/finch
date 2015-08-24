@@ -24,11 +24,13 @@
 
 package io.finch.response
 
+import java.io.File
+
 import com.twitter.finagle.Service
 import com.twitter.finagle.httpx.Response
-import com.twitter.io.Buf
+import com.twitter.io.{ Reader, Buf }
 import com.twitter.io.Buf.Utf8
-import com.twitter.util.Future
+import com.twitter.util.{ Await, Future }
 import io.finch._
 
 /**
@@ -78,6 +80,26 @@ object EncodeResponse {
    */
   implicit val encodeBuf: EncodeResponse[Buf] =
     EncodeResponse("application/octet-stream", None)(identity)
+
+  implicit val encodeReader: EncodeResponse[Reader] =
+    new EncodeResponse[Reader] {
+      import Reader._
+      def apply(rep: Reader): Buf = ???
+      def contentType: String = ???
+    }
+
+  def fromReader(ct: String)(fn: Future[Buf] => Buf): EncodeResponse[Reader] =
+    apply(ct, None) { r => (fn compose Reader.readAll)(r) }
+
+  /**
+   * Allows to pass [[java.io.File]] to a [[ResponseBuilder]].
+   * @param ct Response's Content-Type
+   */
+  def fromFile(ct: String)(fn: Future[Buf] => Buf): EncodeResponse[File] =
+    apply(ct, None) { file =>
+      import Reader._
+      (fn compose readAll compose fromFile)(file)
+    }
 }
 
 /**
